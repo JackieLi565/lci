@@ -10,8 +10,8 @@ type LCI struct {
 	DB         *database.DB
 }
 
-func NewLCI() LCI {
-	config := config.LoadConfig("./config.json")
+func NewLCI(path string) LCI {
+	config, _ := config.Load(path)
 	db := database.NewDB(config.Database)
 
 	return LCI{

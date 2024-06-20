@@ -41,11 +41,11 @@ func NewDB(config config.DatabaseConfig) *DB {
 	url := generateDatabaseURL(config.User, config.Password, config.DBName)
 	conn, err := pgx.Connect(ctx, url)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("lci: database connection failed\nSee 'lci config --help'")
 	}
 
 	if err := conn.Ping(ctx); err != nil {
-		log.Fatal(err)
+		log.Fatal("lci: database ping failed\nSee 'lci config --help'")
 	}
 
 	return &DB{conn: conn}
@@ -158,7 +158,7 @@ func (d *DB) RemovePattern(name string) error {
 }
 
 func (d *DB) AddTag(tag string) error {
-	tagTable := fmt.Sprintf("tag_%s", tag)
+	tagTable := tagPrefix(tag)
 	tx, err := d.conn.Begin(context.Background())
 	if err != nil {
 		return err
@@ -179,6 +179,45 @@ func (d *DB) AddTag(tag string) error {
 
 	insertSQL := `insert into tags (name) values ($1);`
 	if _, err := tx.Exec(context.Background(), insertSQL, tagTable); err != nil {
+		return err
+	}
+
+	return tx.Commit(context.Background())
+}
+
+func (d *DB) ListTags() ([]*Tag, error) {
+	rows, err := d.conn.Query(context.Background(), "select * from tags")
+	if err != nil {
+		return nil, err
+	}
+
+	tags, err := pgx.CollectRows(rows, pgx.RowToStructByName[*Tag])
+	if err != nil {
+		return nil, err
+	}
+
+	for _, tag := range tags {
+		tag.Name = strings.TrimPrefix("tags_", tag.Name)
+	}
+
+	return tags, nil
+}
+
+func (d *DB) RemoveTag(name string) error {
+	tagTable := tagPrefix(name)
+	tx, err := d.conn.Begin(context.Background())
+	if err != nil {
+		return err
+	}
+
+	defer tx.Rollback(context.Background())
+
+	if _, err := tx.Exec(context.Background(), "delete from tags where name = $1", tagTable); err != nil {
+		return err
+	}
+
+	sql := fmt.Sprintf("drop table %s", tagTable)
+	if _, err := tx.Exec(context.Background(), sql); err != nil {
 		return err
 	}
 
